@@ -1,0 +1,196 @@
+#!/bin/bash
+#PBS -N M_Hapl_Align_Samples                                                                                    #name
+#PBS -l nodes=1:ppn=16                                                                                          #nodes & cores
+#PBS -l walltime=10:00:00                                                                                       #max walltime
+#PBS -t 1-45                                                                                                    #for the 45 sampels
+#PBS -o /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_CNV/GRCm38_Samples/Output                           #output directory
+#PBS -e /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_CNV/GRCm38_Samples/Errors                           #error directory
+
+
+#Loading necessary modules
+module load Bowtie2/2.5.4-GCC-13.2.0
+module load SAMtools/1.19.2-GCC-13.2.0
+module load FastQC/0.12.1-Java-11
+module load fastp/0.23.4-GCC-13.2.0
+
+#Defining all samples to be used in parallel
+Samples=(
+    180123WV3SE_DNA093274_S45
+    180123WV6SE_DNA093276_S47
+    180123WV9SPA_DNA093277_S48
+    180123WV9SE_DNA093279_S50
+	180123WV2BE_DNA093281_S52
+	180123WV4BE_DNA093283_S54
+	180123WV5BP_DNA093284_S55
+    180123WV5BE_DNA093285_S56
+    180123WV1BE_DNA093288_S59				
+	180123WV4SP_DNA093290_S61
+	180123WV4SE_DNA093291_S62
+	180123WV3SP_DNA093262_S44    				
+	180123WV6SP_DNA093275_S46    				
+    180123WV9SPB_DNA093278_S49    				
+	180123WV6BP_DNA093286_S57
+	180123WV6BE_DNA093287_S58
+	180123WV3BE_DNA093289_S60
+    180123WV4BP_DNA093282_S53    
+	280123WVMmB2CMH3_DNA098383_S37
+	280123WVMmB28EH3_DNA098384_S41
+	280123WVMmB2CMH1_DNA098385_S38
+ 	280324WVMmB62PH2_DNA121107_S24
+	290624WVMm2B6D24EH23_DNA127192_S37
+	290624WVMm2B6D24EH14_DNA127193_S38    
+	290624WVMm2B6D24EH28_DNA127194_S39   
+    290624WVMm2B6D24EH19_DNA127195_S40    
+    290624WVMm2B6D24EH110_DNA127196_S41
+  	290624WVMm2B6D24EH212_DNA127197_S42  
+    290624WVMm2B6D24EH214_DNA127198_S43    
+    290624WVMm2B6D24EH215_DNA127199_S44
+    290624WVMm2B6D24EH216_DNA127200_S45
+    290624WVMm2B6D24EH117_DNA127201_S46
+	290624WVMm2B6D24EH219_DNA127202_S47
+	290624WVMm2B6D24EH221_DNA127203_S48
+	290624WVMm2B6D24EH122_DNA127204_S49
+    290624WVMm2B6D24EH125_DNA127205_S50
+	290624WVMm2B6D24EH226_DNA127206_S51
+	290624WVMm2B6D24EH227_DNA127207_S52
+    290624WVMm2B6D24EH239_DNA127208_S53
+	290624WVMm2B6D24EH140_DNA127209_S54
+	290624WVMm2B6D24EH243_DNA127210_S55
+	120724WVMm2B6D23EH2_DNA127212_S56
+	120724WVMm2B6D23EH3_DNA127213_S57
+	120724WVMm2B6D24EH5_DNA127215_S58
+	150724WVMm2B6D2BCH_DNA127216_S59
+)
+
+
+#Getting the sample from the current array
+echo "PBS_ARRAYID: $PBS_ARRAYID"
+Sample=${Samples[$PBS_ARRAYID-1]}
+
+#Paths
+R1_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw${Sample}_L001.cram"
+R2_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw${Sample}_L002.cram"
+
+#Merging
+#echo "Merging CRAM files for ${Sample}"
+samtools merge -f /scratch/gent/vo/001/gvo00115/vsc47196/Raw/Merged/Samples/${Sample}.cram "$R1_cram" "$R2_cram"
+
+#Converting the cram files to the fastq format
+Merged_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw/Merged/Samples/${Sample}.cram"
+
+echo "Checking CRAM file: $Merged_cram"
+
+if [ -f "$Merged_cram" ]; then
+    echo "CRAM merge successful for ${Sample}, extracting FASTQ"
+    samtools fastq -1 /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq/${Sample}_R1.fastq.gz -2 /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq/${Sample}_R2.fastq.gz "$Merged_cram"
+    
+    if [ $? -eq 0 ]; then
+        echo "FASTQ extraction successful for ${Sample}"
+    else
+        echo "Error: FASTQ extraction failed for ${Sample}" >&2
+        exit 1
+    fi
+else
+    echo "Error: CRAM merging failed for ${Sample}" >&2
+    exit 1
+fi
+
+#Trimming
+R1_Merged_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq/${Sample}_R1.fastq.gz"
+R2_Merged_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq/${Sample}_R2.fastq.gz"
+
+fastp -i "$R1_Merged_fastq" -I "$R2_Merged_fastq" \
+      -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq_Trimmed/${Sample}_R1_trimmed.fastq.gz -O /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq_Trimmed/${Sample}_R2_trimmed.fastq.gz \
+      --html /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq_Trimmed/Fastp_reports/${Sample}.html \
+      --dedup \
+      --trim_front1 14 --trim_tail1 2 --trim_tail2 2 \
+      --cut_front --cut_tail --cut_window_size 4 --cut_mean_quality 30 \
+      --thread 4
+
+
+#QC
+R1_Trimmed_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq_Trimmed/${Sample}_R1_trimmed.fastq.gz"
+R2_Trimmed_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Fastq_Trimmed/${Sample}_R2_trimmed.fastq.gz"
+
+echo "Running FastQC for ${Sample}"
+fastqc "$R1_Trimmed_fastq" -o /data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/QC_Trimmed/
+fastqc "$R2_Trimmed_fastq" -o /data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/QC_Trimmed/
+echo "Finished FastQC for ${Sample}"
+
+
+#Allignment to bowtie2 and conversion from sam to bam, -p16 so that bowtie2 uses all nodes
+echo "Running Bowtie2 alignment for ${Sample}..."
+bowtie2 -x /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38_index \
+    -1 "$R1_Trimmed_fastq" \
+    -2 "$R2_Trimmed_fastq" \
+    --very-sensitive \
+    -p 16 \
+    --met-file /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments/Alignment_metrics/${Sample}.txt | \
+    samtools view -bS - | \
+    samtools sort -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments/${Sample}.bam
+
+# Check if alignment was successful
+if [ $? -eq 0 ]; then
+    echo "Alignment successful for ${Sample}"
+else
+    echo "Error: Alignment failed for ${Sample}" >&2
+    exit 1
+fi
+    
+#Adjusting the header
+Aligned_bam="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments/${Sample}.bam"
+
+echo "Reheadering BAM file for ${Sample}"
+samtools view -H "$Aligned_bam" > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName/${Sample}_header.sam
+
+Header="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName/${Sample}_header.sam"
+
+sed -i 's/SN:chr/SN:/g' "$Header"
+
+samtools reheader "$Header" "$Aligned_bam" > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName/${Sample}_ChrName.bam
+
+
+#Indexing
+Adjusted_bam="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName/${Sample}_ChrName.bam"
+Index_output_dir="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName"
+
+echo "Indexing BAM file for ${Sample}"
+samtools index -b "$Adjusted_bam" "${Index_output_dir}/${Sample}_ChrName.bam.bai"
+
+# Checking if the index was created successfully
+if [ -f "${Index_output_dir}/${Sample}_ChrName.bam.bai" ]; then
+    echo "Indexing successful for ${Sample}"
+else
+    echo "Error: Indexing failed for ${Sample}" >&2
+    exit 1
+fi
+
+#Counting reads per chromosome
+echo "Counting reads per chromosome for ${Sample}"
+samtools idxstats "$Adjusted_bam" > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName/Chromosome_Reads/${Sample}_idxstats.txt
+
+if [ $? -eq 0 ]; then
+    echo "Chromosome read count successful for ${Sample}"
+else
+    echo "Error: Read count failed for ${Sample}" >&2
+    exit 1
+fi
+
+#Quality control
+echo "Running samtools flagstat for ${Sample}"
+samtools flagstat "$Adjusted_bam" > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Samples/Alignments_ChrName/Bam_QC/${Sample}.txt
+
+if [ $? -eq 0 ]; then
+    echo "BAM quality check successful for ${Sample}"
+else
+    echo "Error: BAM quality check failed for ${Sample}" >&2
+    exit 1
+fi
+
+
+#Cleaning up the temporary
+if [ -d "$tmp_dir" ]; then
+    rm -rf $tmp_dir
+fi
+
+echo "Finished alignment for ${Sample}"
