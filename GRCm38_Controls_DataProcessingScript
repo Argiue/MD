@@ -75,12 +75,12 @@ echo "PBS_ARRAYID: $PBS_ARRAYID"
 Control=${Controls[$PBS_ARRAYID-1]}
 
 #Paths
-#R1_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw${Control}_L001.cram"
-#R2_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw${Control}_L002.cram"
+R1_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw${Control}_L001.cram"
+R2_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw${Control}_L002.cram"
 
 #Merging
 #echo "Merging CRAM files for ${Control}"
-#samtools merge -f /scratch/gent/vo/001/gvo00115/vsc47196/Raw/Merged/Controls/${Control}.cram "$R1_cram" "$R2_cram"
+samtools merge -f /scratch/gent/vo/001/gvo00115/vsc47196/Raw/Merged/Controls/${Control}.cram "$R1_cram" "$R2_cram"
 
 #Converting the cram files to the fastq format
 Merged_cram="/scratch/gent/vo/001/gvo00115/vsc47196/Raw/Merged/Controls/${Control}.cram"
