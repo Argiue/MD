@@ -1,0 +1,137 @@
+# Load required packages
+library(vcfR)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(Cairo)
+
+# Configuration
+mummer_snps_path <- "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/grcm38_vs_dba2_Ensembl.snps"
+dba2_vcf_path <- "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/180123WV2CP_DNA093258_S40_DBA2_bcftools.vcf"
+grcm38_vcf_path <- "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/180123WV2CP_DNA093258_S40_GRCm38_bcftools.vcf"
+output_dir <- "/data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/"
+control_name <- "180123WV2CP_DNA093258_S40_SNP"
+
+
+# Loading MUMer SNPs
+cat("Loading MUMmer SNPs...\n")
+mummer_snps <- read_tsv(mummer_snps_path, col_names = FALSE, show_col_types = FALSE)
+colnames(mummer_snps)[c(2,3,4,11)] <- c("grcm38", "dba2", "pos", "chr")
+mummer_snps <- mummer_snps %>% select(chr, pos, grcm38, dba2)
+
+
+# Loading the VCFs
+cat("Loading DBA2 VCF...\n")
+dba2_vcf <- read.vcfR(dba2_vcf_path, verbose = FALSE)
+dba2_data <- as.data.frame(getFIX(dba2_vcf)) %>% 
+    mutate(pos = as.integer(POS), alt = as.character(ALT)) %>% 
+    select(CHROM, pos, alt) %>% rename(dba2_call = alt) %>%
+    mutate(CHROM = ifelse(!grepl("^chr", CHROM), paste0("chr", CHROM), CHROM))
+
+cat("Loading GRCm38 VCF...\n")
+grcm38_vcf <- read.vcfR(grcm38_vcf_path, verbose = FALSE)
+grcm38_data <- as.data.frame(getFIX(grcm38_vcf)) %>% 
+    mutate(pos = as.integer(POS), alt = as.character(ALT)) %>% 
+    select(CHROM, pos, alt) %>% rename(grcm38_call = alt) %>%
+    mutate(CHROM = ifelse(!grepl("^chr", CHROM), paste0("chr", CHROM), CHROM))
+
+
+# SNP Classification
+cat("Classifying SNPs...\n")
+snp_classified <- mummer_snps %>%
+    left_join(dba2_data, by = c("chr" = "CHROM", "pos" = "pos")) %>%
+    left_join(grcm38_data, by = c("chr" = "CHROM", "pos" = "pos")) %>%
+    mutate(
+        parental_origin = case_when(
+            !is.na(grcm38_call) & grcm38_call == dba2 ~ -0.1,  # DBA2 origin
+            !is.na(dba2_call) & dba2_call == grcm38 ~ 0.1,     # GRCm38 origin
+            !is.na(dba2_call) | !is.na(grcm38_call) ~ 0,       # Mismatch
+            TRUE ~ NA_real_                                    # No call in either
+        )
+    )
+
+
+# Printing and labeling
+cat("Parental origin classification counts:\n")
+snp_counts <- table(snp_classified$parental_origin, useNA = "ifany")
+print(snp_counts)
+non_na_counts <- snp_counts[names(snp_counts) %in% c("-0.1", "0", "0.1")]
+total <- sum(non_na_counts)
+labels_with_counts <- paste0(
+  c("GRCm38", "Other", "DBA2"),
+  " (", as.integer(non_na_counts[c("0.1", "0", "-0.1")]), ", ",
+  round(100 * non_na_counts[c("0.1", "0", "-0.1")] / total, 1), "%)"
+)
+names(labels_with_counts) <- c("0.1", "0", "-0.1")
+
+
+# Saving as a CSV
+cat("Saving CSV...\n")
+write_csv(
+    snp_classified %>%
+        select(chr, pos, grcm38, dba2, grcm38_call, dba2_call, parental_origin),
+    file.path(output_dir, paste0(control_name, "_bcftools_full.csv"))
+)
+
+
+# Calculating the SNP positions
+cat("Calculating genome-wide SNP positions...\n")
+snp_classified$chr[snp_classified$chr %in% c("23", "chrX")] <- "X"
+snp_classified$chr[snp_classified$chr %in% c("24", "chrY")] <- "Y"
+chromosome_order <- c(paste0("chr", 1:19), "X", "Y")
+snp_classified$chr <- factor(snp_classified$chr, levels = chromosome_order)
+
+chr_boundaries <- aggregate(pos ~ chr, data = snp_classified, max)
+chr_boundaries <- chr_boundaries[order(match(chr_boundaries$chr, chromosome_order)), ]
+chr_offset <- c(0, cumsum(chr_boundaries$pos)[-nrow(chr_boundaries)])
+names(chr_offset) <- chromosome_order
+snp_classified$cumulative_position <- snp_classified$pos + chr_offset[as.character(snp_classified$chr)]
+chr_boundaries$cumulative_position <- chr_boundaries$pos + chr_offset[as.character(chr_boundaries$chr)]
+chr_boundaries$midpoint <- (c(0, head(chr_boundaries$cumulative_position, -1)) + chr_boundaries$cumulative_position) / 2
+
+
+# Visualisation 
+cat("Plotting SNPs...\n")
+color_map <- c("0.1" = "darkblue", "0" = "darkgrey", "-0.1" = "darkgreen")
+
+## Legend ordering (GRCm38, Other, DBA2)
+snp_classified <- snp_classified %>%
+  filter(!is.na(parental_origin)) %>%
+  mutate(origin_label = factor(parental_origin, levels = c(0.1, 0, -0.1)))
+
+##ggplot visualisation
+SNP_plot <- ggplot(snp_classified,
+                   aes(x = cumulative_position, y = parental_origin, color = origin_label)) +
+    geom_point(size = 0.3) +
+    geom_vline(data = chr_boundaries, aes(xintercept = cumulative_position),
+               linetype = "dashed", color = "grey50", linewidth = 0.3) +
+    scale_color_manual(values = color_map, labels = labels_with_counts) +
+    scale_x_continuous(
+        breaks = chr_boundaries$midpoint,
+        labels = chr_boundaries$chr,
+        expand = expansion(mult = c(0.01, 0.01))
+    ) +
+    scale_y_continuous(
+        breaks = c(-0.1, 0, 0.1),
+        labels = c("DBA2", "Other", "GRCm38"),
+        limits = c(-0.2, 0.2)
+    ) +
+    labs(title = paste("SNP Profile for", control_name),
+         x = "Chromosome", y = "Parental Origin", color = "Origin") +
+    theme_minimal() +
+    theme(
+        axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+        axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        legend.title = element_text(size = 14, face = "bold"),
+        legend.text = element_text(size = 12)
+    )
+
+CairoPNG(filename = file.path(output_dir, paste0(control_name, "_bcftools.png")),
+         width = 6000, height = 1000, res = 250)
+print(SNP_plot)
+dev.off()
+
+cat("Done!\n")
