@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N ProSolo_SNP                                                                                             # Job name
+#PBS -l nodes=1:ppn=16                                                                                          # Nodes & cores 
+#PBS -l walltime=24:00:00                                                                                       # Increased wall time as bulk data is used
+#PBS -o /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_SNP/Output                                          # Output directory
+#PBS -e /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_SNP/Errors                                          # Error directory
+
+
+module load BCFtools/1.18-GCC-12.3.0
+
+#Adjusting the candidate files to only contain SNPs: 
+bcftools view -v snps /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/Bulk_GRCm38_bcftools.vcf -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/Bulk_GRCm38_snps_only.vcf
+bcftools view -v snps /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/Bulk_DBA2_bcftools.vcf -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/Bulk_DBA2_snps_only.vcf
+
+
+##SNV Calling with ProSolo
+echo "Running ProSolo SNV calling"
+
+source ~/.bashrc
+conda activate prosolo-env
+
+# GRCm38 call
+prosolo single-cell-bulk \
+  --candidates 	/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/Bulk_GRCm38_snps_only.vcf \
+  --output /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/ProSolo/180123WV2CP_DNA093258_S40_GRCm38_ProSolo.vcf \
+  --ploidy 1 \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38.bam \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/Bulk_GRCm38.bam \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38.fa 
+
+
+# DBA2 call
+prosolo single-cell-bulk \
+  --candidates /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/Bulk_DBA2_snps_only.vcf \
+  --output /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/ProSolo/180123WV2CP_DNA093258_S40_DBA2_ProSolo.vcf \
+  --ploidy 1 \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2.bam \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/Bulk_DBA2.bam \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA_2J_Ensembl.fa 
