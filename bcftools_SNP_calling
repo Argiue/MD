@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N GRCm38_bcftools_vcf                                                                                      # Job name
+#PBS -N GRCm38_bcftools_vcf                                                                                     # Job name
 #PBS -l nodes=1:ppn=16                                                                                          # Nodes & cores
 #PBS -l walltime=10:00:00                                                                                       # Maximal time
 #PBS -o /data/gent/471/vsc47196/Thesis_Opdrachten/Mouse_Haploidisation/GRCm38_SNP/Output                        # Output directory
