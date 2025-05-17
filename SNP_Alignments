@@ -1,0 +1,40 @@
+#!/bin/bash
+#PBS -N Bulk_Align                                                                                              # Job name
+#PBS -l nodes=1:ppn=16                                                                                          # Nodes & cores 
+#PBS -l walltime=24:00:00                                                                                       # Increased wall time for safety
+#PBS -o /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_SNP/Output                                          # Output directory
+#PBS -e /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_SNP/Errors                                          # Error directory
+
+#Loading necessary modules
+module load Bowtie2/2.5.4-GCC-13.2.0
+module load SAMtools/1.19.2-GCC-13.2.0
+
+R1_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Controls/Fastq_Trimmed/180123WV2CP_DNA093258_S40_R1_trimmed.fastq.gz"
+R2_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/CNV/GRCm38_Controls/Fastq_Trimmed/180123WV2CP_DNA093258_S40_R2_trimmed.fastq.gz"
+
+#Allignment to GRCm38 using bowtie2 and conversion from sam to bam, -p16 so that bowtie2 uses all cores
+echo "Running Bowtie2 alignment"
+bowtie2 -x /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38_index \
+    -1 "$R1_fastq" \
+    -2 "$R2_fastq" \
+    -p 16 | \
+    samtools view -bS - | \
+    samtools sort -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38.bam
+
+#Indexing
+echo "Indexing GRCm38 BAM"
+samtools index /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38.bam
+
+    
+#Allignment to DBA2J using bowtie2 and conversion from sam to bam, -p16 so that bowtie2 uses all cores
+echo "Running Bowtie2 alignment"
+bowtie2 -x /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA2_Ensembl_index \
+    #-1 "$R1_fastq" \
+    #-2 "$R2_fastq" \
+    #-p 16 | \
+    #samtools view -bS - | \
+    #samtools sort -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2.bam
+    
+#Indexing
+echo "Indexing DBA2J BAM"
+samtools index /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2.bam
