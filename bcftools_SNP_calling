@@ -18,7 +18,7 @@ bcftools call -mv -Ov --ploidy 1 \
   
 
 #DBA2_SNP_call  
-bcftools mpileup -Ou -f "/scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA_2J_Ensembl.fa" \
-  "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2.bam" | \
+bcftools mpileup -Ou -f /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA_2J_Ensembl.fa \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2.bam | \
 bcftools call -mv -Ov --ploidy 1 \
-  -o "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/180123WV2CP_DNA093258_S40_DBA2_bcftools.vcf"
+  -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/bcftools/180123WV2CP_DNA093258_S40_DBA2_bcftools.vcf
