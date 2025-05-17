@@ -1,0 +1,47 @@
+#!/bin/bash
+#PBS -N HC_LowCov_vcf                                                                                           # Job name
+#PBS -l nodes=1:ppn=16                                                                                          # Nodes & cores
+#PBS -l walltime=10:00:00                                                                                       # Max time
+#PBS -o /data/gent/471/vsc47196/Thesis_Opdrachten/Mouse_Haploidisation/GRCm38_SNP/Output                        # Output directory
+#PBS -e /data/gent/471/vsc47196/Thesis_Opdrachten/Mouse_Haploidisation/GRCm38_SNP/Errors                        # Error directory
+
+
+module load GATK/4.6.0.0-GCCcore-13.2.0-Java-17
+module load SAMtools/1.19.2-GCC-13.2.0
+
+
+samtools addreplacerg \
+  -r '@RG\tID:sample1\tSM:PB2_180123WV2CP_DNA093258_S40\tPL:ILLUMINA' \
+  -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2_adjusted.bam \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2.bam
+
+samtools index /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2_adjusted.bam
+
+
+
+gatk HaplotypeCaller \
+  -R /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA_2J_Ensembl.fa \
+  -I /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_DBA2_adjusted.bam \
+  -O /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/HaplotypeCaller/180123WV2CP_DNA093258_S40_DBA2_HC_LowCov.vcf \
+  --sample-ploidy 1 \
+  --native-pair-hmm-threads 8 \
+  --min-base-quality-score 0 \
+  --standard-min-confidence-threshold-for-calling 0
+  
+  
+samtools addreplacerg \
+  -r '@RG\tID:sample1\tSM:PB2_180123WV2CP_DNA093258_S40\tPL:ILLUMINA' \
+  -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38_adjusted.bam \
+  /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38.bam
+
+samtools index /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38_adjusted.bam
+
+
+gatk HaplotypeCaller \
+  -R /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38.fa \
+  -I /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/180123WV2CP_DNA093258_S40_GRCm38_adjusted.bam \
+  -O /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/HaplotypeCaller/180123WV2CP_DNA093258_S40_GRCm38_HC_LowCov.vcf \
+  --sample-ploidy 1 \
+  --native-pair-hmm-threads 8 \
+  --min-base-quality-score 0 \
+  --standard-min-confidence-threshold-for-calling 0    
