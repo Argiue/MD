@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -N GRCm38_DBA2_Compare                                                                                     # Job name
+#PBS -l nodes=1:ppn=4,mem=64gb                                                                                  # Nodes & cores 
+#PBS -l walltime=24:00:00                                                                                       # Increased wall time 
+#PBS -o /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_SNP/Output                                          # Output directory
+#PBS -e /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_SNP/Errors                                          # Error directory
+
+module load MUMmer/4.0.0rc1-GCCcore-12.3.0
+
+nucmer --maxmatch -l 100 -c 500 /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38.fa /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA_2J_Ensembl.fa -p /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/grcm38_vs_dba2_Ensembl
+delta-filter -1 /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/grcm38_vs_dba2_Ensembl.delta > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/grcm38_vs_dba2_Ensembl.filtered.delta
+show-snps -ClrTH /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/grcm38_vs_dba2_Ensembl.filtered.delta > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNP/grcm38_vs_dba2_Ensembl.snps
