@@ -1,0 +1,70 @@
+library(Biobase)
+library(BSgenome.Mmusculus.UCSC.mm39)  
+library(QDNAseq)
+library(future)
+
+# Setting the virtual memory
+options(future.globals.maxSize = 8912896000)
+
+# Parallelization 
+future::plan("multiprocess", workers = 4)
+
+bam_files <- list.files(path = "/scratch/gent/vo/002/gvo00207/vsc47196/GRCm_References_Alignments_191024", pattern = "\\.bam$", full.names = TRUE)
+
+# For each of the desired binsizes
+for (binsize in c(1000, 500, 30, 15, 50, 10, 5, 1)) {
+  
+  # Creating the bins
+  bins <- createBins(bsgenome = BSgenome.Mmusculus.UCSC.GRCm39, binSize = binsize)
+  
+  # Calculating mappability
+  bins$mappability <- calculateMappability(bins,
+                                           bigWigFile = "/data/gent/vo/002/gvo00207/vsc47196/GRCm39_mappability.50mer.bigwig",
+                                           bigWigAverageOverBed = "/data/gent/vo/002/gvo00207/vsc47196/bigWigAverageOverBed")
+  
+  # Calculating the blacklist values
+  bins$blacklist <- calculateBlacklist(bins, bedFiles = c("/data/gent/vo/002/gvo00207/vsc47196/GRCm39-blacklist.v2.bed"))
+  
+  # Setting residuals and specifying which bins to use
+  bins$residual <- NA
+  bins$use <- bins$chromosome %in% as.character(1:19) & bins$bases > 0
+
+  # Clearing the Cache
+  clearCache(recursive = TRUE, force = TRUE)
+
+  # Calculating read counts for control samples
+  tg <- binReadCounts(bins, bamfiles = bam_files, cache = TRUE)
+  
+  # Implementing the residuals values
+  bins$residual <- iterateResiduals(tg)
+  
+  # Creating the AnnotatedDataFrame
+  bins <- AnnotatedDataFrame(bins,
+                             varMetadata = data.frame(labelDescription = c(
+                               "Chromosome name",
+                               "Base pair start position",
+                               "Base pair end position",
+                               "Percentage of non-N nucleotides (of full bin size)",
+                               "Percentage of C and G nucleotides (of non-N nucleotides)",
+                               "Average mappability of 50mers with a maximum of 2 mismatches",
+                               "Percent overlap with ENCODE blacklisted regions",
+                               "Median loess residual from control samples",
+                               "Whether the bin should be used in subsequent analysis steps"),
+                               row.names = colnames(bins)))
+  
+  # Adding QDNAseq metadata information
+  QDNAseqInfo <- list(
+    author = "Aron Vanhaeverbeke",
+    date = Sys.time(),
+    organism = 'Mmusculus',
+    build = 'GRCm39',
+    version = packageVersion("QDNAseq"),
+    url = paste0("not yet available"),
+    md5 = digest::digest(bins@data),
+    sessionInfo = sessionInfo())
+  
+  attr(bins, "QDNAseq") <- QDNAseqInfo
+  
+  # Saving the bins
+  save(bins, file = paste0("/data/gent/vo/002/gvo00207/vsc47196", "/GRCm39.", binsize, "kbp.SR50.rda"), compress = 'xz')
+}
