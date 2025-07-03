@@ -1,0 +1,141 @@
+#!/bin/bash
+#PBS -N SNV_Alignment_bcftools                                                                                  # Job name
+#PBS -l nodes=1:ppn=16                                                                                          # Nodes & cores 
+#PBS -l walltime=24:00:00                                                                                       # Max duration
+#PBS -t 1-17                                                                                                    # To run each sample
+#PBS -o /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_DBA2_SNV/Output                                     # Output directory
+#PBS -e /data/gent/471/vsc47196/Mouse_Haploidisation/GRCm38_DBA2_SNV/Errors                                     # Error directory
+
+
+
+# ---Loading necessary modules
+module load Bowtie2/2.5.4-GCC-13.2.0
+module load SAMtools/1.19.2-GCC-13.2.0
+module load BCFtools/1.19-GCC-13.2.0
+
+
+
+# ---Defining all samples to be used in parallel
+Samples=(
+    180123WV2CP_DNA093258_S40
+    180123WV10CP_DNA093248_S23
+    180123WV4CPA_DNA093250_S32
+	180123WV9CP_DNA093256_S38
+	180123WV5CP_DNA093260_S42
+    180123WV2BP_DNA093280_S51
+	180123WV4CPB_DNA093252_S34
+    180123WV11CP_DNA093254_S36
+	180123WV9SPA_DNA093277_S48
+	180123WV5BP_DNA093284_S55
+	180123WV4SP_DNA093290_S61
+	180123WV3SP_DNA093262_S44
+	180123WV6SP_DNA093275_S46
+    180123WV9SPB_DNA093278_S49
+    180123WV6BP_DNA093286_S57
+    180123WV4BP_DNA093282_S53
+    280324WVMmB62PH2_DNA121107_S24
+)
+
+
+# -Getting the sample from the current array
+echo "PBS_ARRAYID: $PBS_ARRAYID"
+Sample=${Samples[$PBS_ARRAYID-1]}
+
+
+
+# ---Fastq, trimmed during CNV analysis
+R1_Trimmed_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Fastq/${Sample}_R1_trimmed.fastq.gz"
+R2_Trimmed_fastq="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Fastq/${Sample}_R2_trimmed.fastq.gz"
+
+
+
+# ---GRCm38
+# -Allignment to GRCm38 using bowtie2 and conversion from sam to bam, -p16 so that bowtie2 uses all cores
+echo "Running Bowtie2 alignment"
+bowtie2 -x /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38_index \
+    -1 "$R1_Trimmed_fastq" \
+    -2 "$R2_Trimmed_fastq" \
+    -p 16 | \
+    samtools view -bS - | \
+    samtools sort -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_GRCm38.bam
+
+#Check if alignment was successful
+if [ $? -eq 0 ]; then
+    echo "Alignment successful for ${Sample}"
+else
+    echo "Error: Alignment failed for ${Sample}" >&2
+    exit 1
+fi
+
+# -Indexing
+Aligned_bam="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_GRCm38.bam"
+Index_output_dir="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments"
+
+echo "Indexing BAM file for ${Sample}"
+samtools index -b "$Aligned_bam" "${Index_output_dir}/${Sample}_GRCm38.bam.bai"
+
+#Checking if the index was created successfully
+if [ -f "${Index_output_dir}/${Sample}_GRCm38.bam.bai" ]; then
+    echo "Indexing successful for ${Sample}"
+else
+    echo "Error: Indexing failed for ${Sample}" >&2
+    exit 1
+fi
+
+
+    
+# ---DBA2
+# -Allignment to DBA2J using bowtie2 and conversion from sam to bam, -p16 so that bowtie2 uses all cores
+echo "Running Bowtie2 alignment"
+bowtie2 -x /scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA2_Ensembl_index \
+    -1 "$R1_Trimmed_fastq" \
+    -2 "$R2_Trimmed_fastq" \
+    -p 16 | \
+    samtools view -bS - | \
+    samtools sort -o /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2.bam
+    
+#Check if alignment was successful
+if [ $? -eq 0 ]; then
+    echo "Alignment successful for ${Sample}"
+else
+    echo "Error: Alignment failed for ${Sample}" >&2
+    exit 1
+fi
+
+# -Adjusting the header
+Aligned_bam="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2.bam"
+
+echo "Reheadering BAM file for ${Sample}"
+samtools view -H "$Aligned_bam" > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2_header.sam
+
+Header="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2_header.sam"
+
+sed 's/^@SQ\tSN:\([0-9XY][0-9XY]*\)/@SQ\tSN:chr\1/' "$Header"
+
+samtools reheader "$Header" "$Aligned_bam" > /scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2_ChrName.bam
+
+# -Indexing
+Adjusted_bam="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2_ChrName.bam"
+Index_output_dir="/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments"
+
+echo "Indexing BAM file for ${Sample}"
+samtools index -b "$Adjusted_bam" "${Index_output_dir}/${Sample}_DBA2_ChrName.bam.bai"
+
+#Checking if the index was created successfully
+if [ -f "${Index_output_dir}/${Sample}_DBA2_ChrName.bam.bai" ]; then
+    echo "Indexing successful for ${Sample}"
+else
+    echo "Error: Indexing failed for ${Sample}" >&2
+    exit 1
+fi
+
+
+
+# ---bcftools calling
+# Calling against GRCm38
+bcftools mpileup -Ou -f "/scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/GRCm38/GRCm38.fa" "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_GRCm38.bam" | \
+bcftools call -mv -Ov --ploidy 1 -o "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/bcftools_calls/${Sample}_GRCm38_bcftools.vcf"
+
+# Calling against DBA2
+bcftools mpileup -Ou -f "/scratch/gent/vo/001/gvo00115/vsc47196/Reference_Genomes/DBA2/DBA_2J_Ensembl.fa" "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Alignments/${Sample}_DBA2_ChrName.bam" | \
+bcftools call -mv -Ov --ploidy 1 -o "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/bcftools_calls/${Sample}_DBA2_bcftools.vcf"
