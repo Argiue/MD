@@ -1,0 +1,207 @@
+# ---- Load required packages ----
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(readr)
+  library(vcfR)
+  library(ggplot2)
+  library(Cairo)
+})
+
+
+
+# --- Configuration
+mummer_snps_path <- "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/Mummer4/grcm38_vs_dba2_Ensembl.snps"
+mgp_snps_path <- "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/DBA2_vs_GRCm38_SNPs_MouseGenomeProject.vcf"
+vcf_dir <- "/scratch/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/bcftools_calls"
+csv_dir <- "/data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/SNV_Calls"
+mummer_vis_dir <- "/data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/SNV_Mummer4_Visualisation"
+mgp_vis_dir <- "/data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/SNV_MGP_Visualisation"
+shared_vis_dir <- "/data/gent/vo/001/gvo00115/vsc47196/Mouse_Haploidisation/SNV/SNV_Shared_Visualisation"
+
+
+
+# --- Loading and processing MUMmer SNPs
+cat("Loading MUMmer SNPs...\n")
+raw_mummer <- read_tsv(mummer_snps_path, col_names = FALSE, show_col_types = FALSE)
+colnames(raw_mummer)[c(2, 3, 4, 11)] <- c("grcm38", "dba2", "pos", "chr")
+mummer_snps <- raw_mummer %>% select(chr, pos, grcm38, dba2)
+
+
+
+# --- Loading and processing MGP SNPs
+cat("Loading MGP SNPs...\n")
+skip_n <- grep("^#CHROM", readLines(mgp_snps_path)) - 1
+MGP_snps <- read_tsv(mgp_snps_path, skip = skip_n, show_col_types = FALSE) %>%
+  select(`#CHROM`, POS, REF, ALT) %>%
+  rename(chr = `#CHROM`, pos = POS, ref = REF, alt = ALT) %>%
+  mutate(chr = paste0("chr", chr))
+
+
+
+# --- SNV Classification Function
+classify_snps <- function(snps_df, label_suffix, dba2_data, grcm38_data, csv_dir) {
+  cat(paste0("\nClassifying SNPs for: ", label_suffix, "...\n"))
+  
+  snp_classified <- snps_df %>%
+    left_join(dba2_data, by = c("chr" = "CHROM", "pos" = "pos")) %>%
+    left_join(grcm38_data, by = c("chr" = "CHROM", "pos" = "pos")) %>%
+    mutate(
+      parental_origin = case_when(
+        !is.na(grcm38_call) & grcm38_call == dba2 ~ -0.1,
+        !is.na(dba2_call) & dba2_call == grcm38 ~ 0.1,
+        !is.na(dba2_call) & !is.na(grcm38_call) & dba2_call != grcm38 ~ 0,
+        TRUE ~ NA_real_
+      )
+    )
+  
+  snp_classified$chr <- as.character(snp_classified$chr)
+  snp_classified$chr[snp_classified$chr %in% c("23", "chrX", "X")] <- "X"
+  snp_classified$chr[snp_classified$chr %in% c("24", "chrY", "Y")] <- "Y"
+  snp_classified$chr[!snp_classified$chr %in% c("X", "Y") & !grepl("^chr", snp_classified$chr)] <- paste0("chr", snp_classified$chr)
+  
+  write_csv(snp_classified %>%
+              select(chr, pos, grcm38, dba2, grcm38_call, dba2_call, parental_origin),
+            file.path(csv_dir, paste0(label_suffix, "_classified.csv")))
+  
+  return(snp_classified)
+}
+
+
+
+# --- Plotting Function
+plot_snp_stack_bars_real_coords <- function(snp_classified, label_suffix, plot_dir) {
+  cat("Generating SNP stack bar plot with true chromosome lengths and mixed calls...\n")
+  
+  informative_snps <- snp_classified %>%
+    filter(parental_origin %in% c(0.1, -0.1, 0)) %>%
+    mutate(origin_label = case_when(
+      parental_origin == 0.1 ~ "GRCm38",
+      parental_origin == -0.1 ~ "DBA2",
+      parental_origin == 0 ~ "Mixed"
+    ))
+  
+  informative_snps$chr <- gsub("chr", "", informative_snps$chr)
+  informative_snps$chr[informative_snps$chr == "X"] <- "20"
+  informative_snps <- informative_snps %>% filter(chr %in% as.character(1:20))
+  informative_snps$chr <- factor(informative_snps$chr, levels = as.character(1:20))
+  
+  chr_lengths <- snp_classified %>%
+    mutate(chr = gsub("chr", "", chr)) %>%
+    mutate(chr = ifelse(chr == "X", "20", chr)) %>%
+    filter(chr %in% as.character(1:20)) %>%
+    group_by(chr) %>%
+    summarise(chr_len = max(pos), .groups = "drop")
+  
+  informative_snps <- informative_snps %>%
+    left_join(chr_lengths, by = "chr") %>%
+    mutate(
+      xmin = as.numeric(chr) - 0.4,
+      xmax = as.numeric(chr) + 0.4,
+      ymin = pos / 1e6,
+      ymax = (pos + 1e6) / 1e6
+    )
+  
+  chr_outlines <- chr_lengths %>%
+    mutate(
+      chr = factor(chr, levels = as.character(1:20)),
+      xmin = as.numeric(chr) - 0.4,
+      xmax = as.numeric(chr) + 0.4,
+      ymin = 0,
+      ymax = chr_len / 1e6
+    )
+  
+  p <- ggplot() +
+    geom_rect(data = informative_snps,
+              aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = origin_label),
+              color = NA) +
+    geom_rect(data = chr_outlines,
+              aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+              fill = NA, color = "black", linewidth = 0.6) +
+    scale_fill_manual(values = c("GRCm38" = "#1E64C8", "DBA2" = "#E85E71", "Mixed" = "purple"), name = NULL) +
+    scale_y_continuous(name = "Position (Mb)", expand = expansion(mult = c(0, 0.01))) +
+    scale_x_continuous(name = "Chromosome", breaks = 1:20, labels = c(1:19, "X")) +
+    labs(title = paste("SNV Profile for", label_suffix)) +
+    theme_minimal() +
+    theme(
+      legend.position = c(0.65, 0.92),
+      legend.justification = "left",
+      legend.direction = "horizontal",
+      panel.grid = element_blank(),
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+    )
+  
+  CairoPNG(filename = file.path(plot_dir, paste0(label_suffix, ".png")),
+           width = 3000, height = 2000, res = 300)
+  print(p)
+  dev.off()
+}
+
+
+
+# --- Summary Function
+summarize_snp_classes <- function(classified_df, label_suffix) {
+  cat(paste0("\nSNP origin summary for ", label_suffix, ":\n"))
+  summary_table <- classified_df %>%
+    mutate(origin_label = case_when(
+      parental_origin == 0.1 ~ "GRCm38",
+      parental_origin == -0.1 ~ "DBA2",
+      parental_origin == 0 ~ "Mixed",
+      TRUE ~ "Unclassified"
+    )) %>%
+    count(origin_label)
+  print(summary_table)
+}
+
+
+
+# --- Processing the Samples
+vcf_files <- list.files(vcf_dir, pattern = "_GRCm38_bcftools.vcf$", full.names = TRUE)
+sample_names <- gsub("_GRCm38_bcftools.vcf", "", basename(vcf_files))
+
+for (sample in sample_names) {
+  cat("\n=== Processing sample:", sample, "===\n")
+  
+  dba2_path <- file.path(vcf_dir, paste0(sample, "_DBA2_bcftools.vcf"))
+  grcm38_path <- file.path(vcf_dir, paste0(sample, "_GRCm38_bcftools.vcf"))
+  
+  if (!file.exists(dba2_path) || !file.exists(grcm38_path)) {
+    cat("Skipping", sample, "- missing VCFs.\n")
+    next
+  }
+  
+  dba2_vcf <- read.vcfR(dba2_path, verbose = FALSE)
+  grcm38_vcf <- read.vcfR(grcm38_path, verbose = FALSE)
+  
+  dba2_data <- as.data.frame(getFIX(dba2_vcf)) %>%
+    mutate(pos = as.integer(POS), alt = as.character(ALT)) %>%
+    select(CHROM, pos, alt) %>%
+    rename(dba2_call = alt) %>%
+    mutate(CHROM = ifelse(!grepl("^chr", CHROM), paste0("chr", CHROM), CHROM))
+  
+  grcm38_data <- as.data.frame(getFIX(grcm38_vcf)) %>%
+    mutate(pos = as.integer(POS), alt = as.character(ALT)) %>%
+    select(CHROM, pos, alt) %>%
+    rename(grcm38_call = alt) %>%
+    mutate(CHROM = ifelse(!grepl("^chr", CHROM), paste0("chr", CHROM), CHROM))
+  
+  # - MUMmer
+  mummer_classified <- classify_snps(mummer_snps, paste0(sample, "_mummer"), dba2_data, grcm38_data, csv_dir)
+  plot_snp_stack_bars_real_coords(mummer_classified, paste0(sample, "_mummer"), mummer_vis_dir)
+  summarize_snp_classes(mummer_classified, paste0(sample, "_mummer"))
+  
+  # - MGP
+  mgp_classified <- classify_snps(MGP_snps %>% select(chr, pos, grcm38 = ref, dba2 = alt),
+                                  paste0(sample, "_mgp"), dba2_data, grcm38_data, csv_dir)
+  plot_snp_stack_bars_real_coords(mgp_classified, paste0(sample, "_mgp"), mgp_vis_dir)
+  summarize_snp_classes(mgp_classified, paste0(sample, "_mgp"))
+  
+  # - Shared
+  shared_snps <- inner_join(mummer_snps, MGP_snps, by = c("chr", "pos")) %>%
+    select(chr, pos, grcm38, dba2)
+  shared_classified <- classify_snps(shared_snps, paste0(sample, "_shared"), dba2_data, grcm38_data, csv_dir)
+  plot_snp_stack_bars_real_coords(shared_classified, paste0(sample, "_shared"), shared_vis_dir)
+  summarize_snp_classes(shared_classified, paste0(sample, "_shared"))
+}
+
